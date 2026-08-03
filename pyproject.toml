@@ -1,0 +1,108 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "purrcept_litellm"
+version = "0.1.0"
+description = "LiteLLM provider backend for purrcept_core."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+  { name = "Purrcept contributors" },
+]
+keywords = ["agents", "litellm", "llm", "purrcept"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Typing :: Typed",
+]
+dependencies = [
+  "litellm>=1.94.1,<2",
+  "purrcept_core>=0.5.0,<0.6.0",
+]
+
+[project.optional-dependencies]
+otel = [
+  "opentelemetry-api>=1.28,<2",
+  "opentelemetry-exporter-otlp-proto-http>=1.28,<2",
+  "opentelemetry-sdk>=1.28,<2",
+]
+
+[project.urls]
+Documentation = "https://github.com/purrcept/purrcept_litellm#readme"
+Issues = "https://github.com/purrcept/purrcept_litellm/issues"
+Source = "https://github.com/purrcept/purrcept_litellm"
+
+[dependency-groups]
+dev = [
+  "build>=1.2.2",
+  "coverage[toml]>=7.6",
+  "opentelemetry-api>=1.28,<2",
+  "opentelemetry-exporter-otlp-proto-http>=1.28,<2",
+  "opentelemetry-sdk>=1.28,<2",
+  "pyright>=1.1.390",
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "pytest-cov>=6",
+  "ruff>=0.9",
+]
+
+[tool.uv.sources]
+purrcept_core = { path = "../purrcept_core", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/purrcept_litellm"]
+
+[tool.hatch.build]
+exclude = [
+  "/.coverage",
+  "/.pytest_cache",
+  "/.ruff_cache",
+  "/.venv",
+  "/dist",
+  "**/__pycache__",
+  "**/*.pyc",
+]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+  "integration: requires a real provider API key and network access",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["purrcept_litellm"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["ASYNC", "B", "E", "F", "I", "RUF", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B017"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.pyright]
+include = ["src", "tests", "examples"]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"
+reportUnnecessaryTypeIgnoreComment = "error"
