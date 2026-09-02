@@ -173,11 +173,11 @@ Core 的稳定协议。
 
 ## Prompt control、缓存与 continuation
 
-- Core 已编译好的 reminder 会按其确定顺序作为尾部 `system` message 发送。插件不重新
+- Core 已编译好的 reminder 一律作为 `user` message 发送，不进入 `system`。插件不重新
   解释 scope、priority 或 replacement；生命周期仍由 `Conversation` / `PromptCompiler`
-  管理。
-- `INSTRUCTIONS` placement 仍保持 system 角色，但受 Chat Completions 的跨 Provider
-  能力限制，不会被移动到历史前方。其与其他 reminder 的相对顺序保持不变。
+  管理。只有 `SystemInstruction` 使用 `system`。
+- `INSTRUCTIONS` placement 仍插在对话历史之前，但角色是 `user`。`TAIL` / `AUTO` 跟在
+  历史之后。相对顺序保持 Core 编译结果。
 - `cache="prefer"` / `cache="explicit"` 会在稳定 instruction（其次为最后一个 tool）
   添加 LiteLLM `cache_control` 提示。Provider 是否支持和如何计费由 Provider 决定。
 - strict cache 默认拒绝。只有确认目标 Provider 兼容后，才设置

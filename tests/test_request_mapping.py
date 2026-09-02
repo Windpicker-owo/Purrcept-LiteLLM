@@ -156,13 +156,14 @@ async def test_complete_request_is_compiled_to_litellm_chat_format() -> None:
     messages = cast(list[dict[str, object]], call["messages"])
     assert [message["role"] for message in messages] == [
         "system",
-        "system",
+        "user",
         "user",
         "assistant",
         "tool",
-        "system",
+        "user",
     ]
     assert messages[0]["content"] == "Be exact."
+    assert messages[1]["role"] == "user"
     assert messages[1]["content"] == "Second reminder."
     user_content = cast(list[dict[str, object]], messages[2]["content"])
     assert user_content == [
@@ -192,7 +193,11 @@ async def test_complete_request_is_compiled_to_litellm_chat_format() -> None:
         "content": "[tool_error]\nnot found",
         "name": "lookup",
     }
+    assert messages[-1]["role"] == "user"
     assert messages[-1]["content"] == "First reminder."
+    assert [message["content"] for message in messages if message["role"] == "system"] == [
+        "Be exact.",
+    ]
     tools = cast(list[dict[str, object]], call["tools"])
     assert tools == [
         {
@@ -456,13 +461,47 @@ async def test_preferred_cache_keeps_volatile_tail_after_growing_breakpoint() ->
     await LiteLLMBackend(completion=completion).generate(request, model="model")
 
     messages = cast(list[dict[str, object]], completion.calls[0]["messages"])
+    assert messages[0]["role"] == "system"
     assert messages[0]["cache_control"] == {"type": "ephemeral"}
     assert "cache_control" not in messages[1]
     assert "cache_control" not in messages[2]
     assert messages[3]["cache_control"] == {"type": "ephemeral"}
+    assert messages[4]["role"] == "user"
+    assert messages[4]["content"] == "volatile world view"
     assert "cache_control" not in messages[4]
     tools = cast(list[dict[str, object]], completion.calls[0]["tools"])
     assert tools[0]["cache_control"] == {"type": "ephemeral"}
+
+
+async def test_instruction_and_tail_reminders_are_user_messages() -> None:
+    """Reminders stay user-level; only SystemInstruction uses system."""
+
+    completion = CaptureCompletion(text_response())
+    request = ModelRequest(
+        (Message.user("hello"),),
+        instructions=(SystemInstruction.from_text("stable contract"),),
+        reminders=(
+            SystemReminder(
+                (TextBlock("prefix reminder"),),
+                key="prefix",
+                placement=ReminderPlacement.INSTRUCTIONS,
+            ),
+            SystemReminder(
+                (TextBlock("tail reminder"),),
+                key="tail",
+                placement=ReminderPlacement.TAIL,
+            ),
+        ),
+    )
+
+    await LiteLLMBackend(completion=completion).generate(request, model="model")
+
+    messages = cast(list[dict[str, object]], completion.calls[0]["messages"])
+    assert [message["role"] for message in messages] == ["system", "user", "user", "user"]
+    assert messages[0]["content"] == "stable contract"
+    assert messages[1]["content"] == "prefix reminder"
+    assert messages[2]["content"] == "hello"
+    assert messages[3]["content"] == "tail reminder"
 
 
 @pytest.mark.parametrize("mode", [CacheMode.AUTO, CacheMode.DISABLED])

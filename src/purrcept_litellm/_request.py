@@ -71,11 +71,11 @@ def compile_request(
     for instruction in request.instructions:
         messages.append(_system_message(instruction))
 
-    # Placement is a semantic hand-off from Core. Instruction reminders extend
-    # the stable control prefix and therefore must precede every world-authored
-    # conversation message. AUTO retains the adapter's historical tail policy;
-    # providers that need a different automatic strategy can introduce it
-    # explicitly without changing the meaning of INSTRUCTIONS or TAIL.
+    # Placement is position relative to history, not wire role. Only
+    # SystemInstruction uses ``system``; every reminder is a user message.
+    # INSTRUCTIONS reminders still precede conversation so they sit next to
+    # the trusted prefix, but they remain user-level and are not hoisted into
+    # the provider system blob. TAIL and AUTO follow the transcript.
     for reminder in request.reminders:
         if reminder.placement is ReminderPlacement.INSTRUCTIONS:
             messages.append(_reminder_message(reminder))
@@ -170,8 +170,11 @@ def _system_message(instruction: SystemInstruction) -> dict[str, object]:
 
 
 def _reminder_message(reminder: SystemReminder) -> dict[str, object]:
+    # Reminders are request-local control text, not system instructions.
+    # Emitting them as ``system`` lets Chat Completions gateways concatenate
+    # them into the prompt prefix and truncate prefix cache on every change.
     return {
-        "role": "system",
+        "role": "user",
         "content": _content_value(reminder.content, field_name="reminder"),
     }
 
@@ -331,7 +334,7 @@ def _apply_prompt_cache(
     breakpoint caches only the static contract, which is especially wasteful
     for a long-lived Entity whose tool schema and transcript are also repeated.
     The three targets below stay within the common four-breakpoint provider
-    limit and never mark the volatile tail reminder.
+    limit and never mark the volatile user-level tail reminder.
     """
 
     cache = request.cache

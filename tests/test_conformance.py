@@ -61,9 +61,8 @@ def _assert_prompt_control(
     assert all(set(message) <= allowed for message in messages)
 
     if case is BackendConformanceCase.REQUEST_SEMANTICS:
-        # LiteLLM maps INSTRUCTIONS into the trusted system prefix. TAIL and
-        # provider-selected AUTO reminders follow the conversation while
-        # retaining their relative order from Core's compiled request.
+        # Reminders are user messages. INSTRUCTIONS still precede history;
+        # TAIL and AUTO follow it. Only SystemInstruction uses system.
         assert (
             serialized.index("Follow the conformance contract.")
             < serialized.index("Use the requested response format.")
