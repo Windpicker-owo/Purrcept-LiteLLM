@@ -36,9 +36,9 @@ otel = [
 ]
 
 [project.urls]
-Documentation = "https://github.com/purrcept/purrcept_litellm#readme"
-Issues = "https://github.com/purrcept/purrcept_litellm/issues"
-Source = "https://github.com/purrcept/purrcept_litellm"
+Documentation = "https://github.com/Windpicker-owo/Purrcept-LiteLLM#readme"
+Issues = "https://github.com/Windpicker-owo/Purrcept-LiteLLM/issues"
+Source = "https://github.com/Windpicker-owo/Purrcept-LiteLLM"
 
 [dependency-groups]
 dev = [
