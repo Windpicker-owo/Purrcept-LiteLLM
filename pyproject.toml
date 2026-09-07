@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "purrcept_litellm"
-version = "0.1.1"
+version = "0.1.3"
 description = "LiteLLM provider backend for purrcept_core."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,7 +24,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
-  "litellm>=1.94.1,<2",
+  "litellm>=1.100.0,<2",
   "purrcept_core>=0.5.1,<0.6.0",
 ]
 

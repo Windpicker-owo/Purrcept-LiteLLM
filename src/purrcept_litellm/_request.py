@@ -82,8 +82,7 @@ def compile_request(
             messages.append(_reminder_message(reminder))
             reminder_indexes.add(len(messages) - 1)
     conversation_start = len(messages)
-    for message in request.messages:
-        messages.extend(_message_payloads(message))
+    messages.extend(_conversation_messages(request.messages))
     conversation_end = len(messages)
     for reminder in request.reminders:
         if reminder.placement is not ReminderPlacement.INSTRUCTIONS:
@@ -183,10 +182,35 @@ def _reminder_message(reminder: SystemReminder) -> dict[str, object]:
     }
 
 
-def _message_payloads(message: Message) -> tuple[dict[str, object], ...]:
-    if message.role is MessageRole.TOOL:
-        return _tool_result_messages(message)
-    return (_chat_message(message),)
+def _conversation_messages(history: Sequence[Message]) -> list[dict[str, object]]:
+    """Keep tool responses adjacent, then expose their images in a user media message.
+
+    Compatibility: Chat Completions tool content accepts text parts only. Core
+    retains images inside ToolResultBlock; this transport projection moves only
+    pixels into a labelled companion message without changing stored history.
+    Images must wait until every adjacent tool result has been emitted, since
+    a user message between responses to parallel tool calls breaks the protocol.
+    """
+
+    messages: list[dict[str, object]] = []
+    images: list[ContentBlock] = []
+    for message in history:
+        if message.role is MessageRole.TOOL:
+            results, attachments = _tool_result_messages(message)
+            messages.extend(results)
+            images.extend(attachments)
+        else:
+            if images:
+                messages.append(
+                    {"role": "user", "content": _content_value(images, field_name="tool images")}
+                )
+                images.clear()
+            messages.append(_chat_message(message))
+    if images:
+        messages.append(
+            {"role": "user", "content": _content_value(images, field_name="tool images")}
+        )
+    return messages
 
 
 def _chat_message(message: Message) -> dict[str, object]:
@@ -246,15 +270,28 @@ def _chat_message(message: Message) -> dict[str, object]:
     return payload
 
 
-def _tool_result_messages(message: Message) -> tuple[dict[str, object], ...]:
+def _tool_result_messages(
+    message: Message,
+) -> tuple[tuple[dict[str, object], ...], tuple[ContentBlock, ...]]:
+    """Separate tool text from visual attachments while preserving call identity and errors."""
+
     results: list[dict[str, object]] = []
+    images: list[ContentBlock] = []
     for block in message.content:
         if not isinstance(block, ToolResultBlock):
             raise ModelRequestError(
                 "tool messages may contain only ToolResultBlock values.",
                 provider="litellm",
             )
-        content = _content_value(block.content, field_name="tool result")
+        text_parts = tuple(part for part in block.content if not isinstance(part, ImageBlock))
+        image_parts = tuple(part for part in block.content if isinstance(part, ImageBlock))
+        content = _content_value(text_parts, field_name="tool result")
+        if image_parts:
+            status = " (tool error)" if block.is_error else ""
+            images.append(
+                TextBlock(f"Visual attachments from tool result {block.tool_call_id}{status}:")
+            )
+            images.extend(image_parts)
         if block.is_error:
             content = _prefix_error(content)
         payload: dict[str, object] = {
@@ -265,7 +302,7 @@ def _tool_result_messages(message: Message) -> tuple[dict[str, object], ...]:
         if message.name is not None:
             payload["name"] = message.name
         results.append(payload)
-    return tuple(results)
+    return tuple(results), tuple(images)
 
 
 def _prefix_error(content: object) -> object:

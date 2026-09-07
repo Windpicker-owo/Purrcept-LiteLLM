@@ -325,13 +325,66 @@ async def test_empty_tool_result_and_multimodal_error_are_supported() -> None:
 
     messages = cast(list[dict[str, object]], completion.calls[0]["messages"])
     assert messages[0]["content"] == ""
-    assert messages[1]["content"] == [
-        {"type": "text", "text": "[tool_error]\n"},
+    assert messages[1]["content"] == "[tool_error]\n"
+    assert messages[2]["role"] == "user"
+    assert messages[2]["content"] == [
+        {"type": "text", "text": "Visual attachments from tool result image (tool error):"},
         {
             "type": "image_url",
             "image_url": {"url": "https://example.invalid/a.png"},
         },
     ]
+
+
+async def test_tool_images_follow_all_parallel_results_without_mutating_history() -> None:
+    """A media companion cannot interrupt the tool-response group or overtake tail reminders."""
+
+    completion = CaptureCompletion(text_response())
+    backend = LiteLLMBackend(completion=completion)
+    image = ImageBlock(ImageBytes(b"pixels", "image/png"), alt_text="tool screenshot")
+    history = (
+        Message(
+            MessageRole.ASSISTANT,
+            (
+                ToolCallBlock("first", "capture", arguments={}),
+                ToolCallBlock("second", "read", arguments={}),
+            ),
+        ),
+        Message(
+            MessageRole.TOOL, (ToolResultBlock("first", content=(TextBlock("captured"), image)),)
+        ),
+        Message(MessageRole.TOOL, (ToolResultBlock("second", content=(TextBlock("read done"),)),)),
+        Message.user("continue"),
+    )
+    request = ModelRequest(
+        history,
+        reminders=(
+            SystemReminder((TextBlock("current world"),), placement=ReminderPlacement.TAIL),
+        ),
+        cache=PromptCachePolicy(mode=CacheMode.DISABLED),
+    )
+    await backend.generate(request, model="model")
+    messages = cast(list[dict[str, object]], completion.calls[0]["messages"])
+    assert [item["role"] for item in messages] == [
+        "assistant",
+        "tool",
+        "tool",
+        "user",
+        "user",
+        "user",
+    ]
+    assert messages[1]["tool_call_id"] == "first" and messages[1]["content"] == "captured"
+    assert messages[2]["tool_call_id"] == "second" and messages[2]["content"] == "read done"
+    assert messages[3]["content"] == [
+        {"type": "text", "text": "Visual attachments from tool result first:"},
+        {"type": "text", "text": "tool screenshot"},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,cGl4ZWxz"}},
+    ]
+    assert messages[4]["content"] == "continue"
+    assert messages[5]["content"] == "current world"
+    assert request.messages == history
+    tool_result = history[1].content[0]
+    assert isinstance(tool_result, ToolResultBlock) and tool_result.content[1] is image
 
 
 async def test_prompt_cache_marks_instruction_or_tool_best_effort() -> None:

@@ -4,6 +4,13 @@ All notable changes to `purrcept_litellm` are documented here.
 
 ## Unreleased
 
+- Require LiteLLM 1.100.0 for upstream DeepSeek vision forwarding (#38397).
+  Verify tool-result image bytes at a loopback HTTP receiver after the real SDK
+  transformations; retain native DeepSeek routing without local provider patches.
+- Map images in Core tool results to a labelled user media message after the complete
+  adjacent tool-response group. Chat Completions tool messages remain text-only;
+  original Core history, tool-call identities, errors and reminder ordering are preserved.
+
 - Emit Core `ReasoningDelta` events for readable provider reasoning while preserving
   the final `ReasoningBlock` and keeping assistant text on its own channel. Requires Core 0.5.1.
 

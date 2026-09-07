@@ -4,7 +4,7 @@
 `ModelBackend` 协议，把 Core 的统一模型请求映射到 LiteLLM Chat Completions，并将
 Provider 响应、工具调用、流式增量和错误重新归一化为 Core 类型。
 
-当前版本：`0.1.0`，对应 `purrcept_core >=0.5.0,<0.6.0`。
+当前版本：`0.1.3`，对应 `purrcept_core >=0.5.1,<0.6.0`、`litellm >=1.100.0,<2`。
 
 ## 安装
 
@@ -223,3 +223,15 @@ uv run python -m build
 `purrcept_core` 只定义 Provider 无关协议和 Agent 语义；本包只承担 LiteLLM
 传输适配。具体模型凭据、网络客户端生命周期和部署策略归 Runtime 所有。这样 Core
 不会依赖任何厂商 SDK，其他 Provider 也可以继续以独立 Python 插件实现。
+
+### 工具结果中的图片
+
+从 0.1.2 起，Core `ToolResultBlock` 中的图片在 Chat Completions 传输时映射到带
+工具调用 ID 说明的 `user` 视觉消息。原始工具消息只保留文本；同一批工具回执全部发出后
+才插入图片，随后再发送后续历史与尾部 Reminder。这样兼容只允许文本 tool 内容的接口，
+同时保留 Core 历史中的真实图像块、错误标记和调用身份。
+
+0.1.3 将 LiteLLM 最低版本提高到 1.100.0，采用其 DeepSeek 视觉修复
+（[上游 #38397](https://github.com/BerriAI/litellm/pull/38397)）。旧版 DeepSeek 适配器会将
+多模态 user 消息折叠为字符串，静默丢弃图片。现在保留原生 `deepseek/` 路由；回归测试
+通过真实 LiteLLM SDK 向本地 HTTP 接收端发送请求，并核对最终 base64 图像字节。
