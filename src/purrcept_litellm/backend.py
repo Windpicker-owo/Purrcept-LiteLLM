@@ -116,7 +116,6 @@ class LiteLLMBackend:
             request,
             model=model,
             config=self._config,
-            stream=True,
         )
         callback_completion = (
             _RequestCallbackCompletion(self._callbacks)

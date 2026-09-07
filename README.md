@@ -235,3 +235,7 @@ uv run python -m build
 （[上游 #38397](https://github.com/BerriAI/litellm/pull/38397)）。旧版 DeepSeek 适配器会将
 多模态 user 消息折叠为字符串，静默丢弃图片。现在保留原生 `deepseek/` 路由；回归测试
 通过真实 LiteLLM SDK 向本地 HTTP 接收端发送请求，并核对最终 base64 图像字节。
+
+## 发布
+
+GitHub Release 自动触发 PyPI 发布，认证配置和版本顺序见 [发布说明](RELEASING.md)。

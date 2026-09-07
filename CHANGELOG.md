@@ -4,6 +4,13 @@ All notable changes to `purrcept_litellm` are documented here.
 
 ## Unreleased
 
+## 0.1.3 - 2026-09-08
+
+- Publish validated wheel and source distributions automatically when a GitHub Release
+  is published, using PyPI Trusted Publishing and an isolated publishing job.
+
+- Remove obsolete non-streaming and pre-image-split cache/error branches; cover
+  cache fallback past assistant tool calls without marking dynamic reminders.
 - Require LiteLLM 1.100.0 for upstream DeepSeek vision forwarding (#38397).
   Verify tool-result image bytes at a loopback HTTP receiver after the real SDK
   transformations; retain native DeepSeek routing without local provider patches.

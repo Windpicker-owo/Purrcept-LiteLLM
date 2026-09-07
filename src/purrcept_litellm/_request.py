@@ -63,7 +63,6 @@ def compile_request(
     *,
     model: str,
     config: LiteLLMConfig,
-    stream: bool = True,
 ) -> dict[str, object]:
     """Build one isolated LiteLLM invocation without mutating the request."""
 
@@ -76,18 +75,15 @@ def compile_request(
     # INSTRUCTIONS reminders still precede conversation so they sit next to
     # the trusted prefix, but they remain user-level and are not hoisted into
     # the provider system blob. TAIL and AUTO follow the transcript.
-    reminder_indexes: set[int] = set()
     for reminder in request.reminders:
         if reminder.placement is ReminderPlacement.INSTRUCTIONS:
             messages.append(_reminder_message(reminder))
-            reminder_indexes.add(len(messages) - 1)
     conversation_start = len(messages)
     messages.extend(_conversation_messages(request.messages))
     conversation_end = len(messages)
     for reminder in request.reminders:
         if reminder.placement is not ReminderPlacement.INSTRUCTIONS:
             messages.append(_reminder_message(reminder))
-            reminder_indexes.add(len(messages) - 1)
 
     tools = [_tool_payload(tool) for tool in request.tools]
     _apply_prompt_cache(
@@ -95,7 +91,6 @@ def compile_request(
         messages=messages,
         tools=tools,
         conversation_range=(conversation_start, conversation_end),
-        reminder_indexes=reminder_indexes,
         config=config,
     )
 
@@ -105,11 +100,10 @@ def compile_request(
         {
             "model": model,
             "messages": messages,
-            "stream": stream,
+            "stream": True,
+            "stream_options": {"include_usage": True},
         }
     )
-    if stream:
-        options["stream_options"] = {"include_usage": True}
     if tools:
         options["tools"] = tools
         options["tool_choice"] = request.settings.tool_choice.value
@@ -293,7 +287,8 @@ def _tool_result_messages(
             )
             images.extend(image_parts)
         if block.is_error:
-            content = _prefix_error(content)
+            # Images already live in the companion message; tool content is text-only.
+            content = f"[tool_error]\n{content}"
         payload: dict[str, object] = {
             "role": "tool",
             "tool_call_id": block.tool_call_id,
@@ -303,13 +298,6 @@ def _tool_result_messages(
             payload["name"] = message.name
         results.append(payload)
     return tuple(results), tuple(images)
-
-
-def _prefix_error(content: object) -> object:
-    prefix = "[tool_error]\n"
-    if isinstance(content, str):
-        return f"{prefix}{content}"
-    return [{"type": "text", "text": prefix}, *cast(list[object], content)]
 
 
 def _content_value(
@@ -367,7 +355,6 @@ def _apply_prompt_cache(
     messages: list[dict[str, object]],
     tools: list[dict[str, object]],
     conversation_range: tuple[int, int],
-    reminder_indexes: set[int],
     config: LiteLLMConfig,
 ) -> None:
     """Place stable, tool, and growing-history cache breakpoints.
@@ -400,17 +387,17 @@ def _apply_prompt_cache(
     for instruction, message in reversed(tuple(instruction_pairs)):
         if instruction.stability is PromptStability.VOLATILE:
             continue
-        if _mark_message_cache_control(message):
-            breakpoints += 1
-            break
+        # Instruction serialization always produces a string or nonempty content list.
+        _mark_message_cache_control(message)
+        breakpoints += 1
+        break
     if tools:
         tools[-1]["cache_control"] = {"type": "ephemeral"}
         breakpoints += 1
 
+    # The range encloses history only; both reminder placements lie outside it.
     start, end = conversation_range
     for index in range(end - 1, start - 1, -1):
-        if index in reminder_indexes:
-            continue
         if _mark_message_cache_control(messages[index]):
             breakpoints += 1
             break

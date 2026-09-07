@@ -1,3 +1,5 @@
+"""Verify request roles, multimodal transport and cache boundaries through the backend."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -34,6 +36,32 @@ from purrcept_core.models import (
 from purrcept_litellm import LiteLLMBackend
 
 from .helpers import CaptureCompletion, text_response
+
+
+@pytest.mark.parametrize("has_prior_text", [False, True])
+async def test_cache_skips_tool_call_only_messages_without_marking_reminders(
+    has_prior_text: bool,
+) -> None:
+    """A contentless assistant call cannot become the growing text-cache breakpoint."""
+
+    completion = CaptureCompletion(text_response())
+    backend = LiteLLMBackend(completion=completion)
+    history = (Message.user("read the clock"),) if has_prior_text else ()
+    call = Message(MessageRole.ASSISTANT, (ToolCallBlock("call", "clock"),))
+    request = ModelRequest(
+        (*history, call),
+        reminders=(
+            SystemReminder((TextBlock("current world"),), placement=ReminderPlacement.TAIL),
+        ),
+        cache=PromptCachePolicy(mode=CacheMode.PREFER),
+    )
+    await backend.generate(request, model="model")
+    messages = cast(list[dict[str, object]], completion.calls[0]["messages"])
+    assert messages[-2]["content"] is None
+    assert "cache_control" not in messages[-2]
+    assert "cache_control" not in messages[-1]
+    if has_prior_text:
+        assert messages[0]["cache_control"] == {"type": "ephemeral"}
 
 
 @dataclass(frozen=True, slots=True)
