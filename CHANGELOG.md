@@ -4,10 +4,18 @@ All notable changes to `purrcept_litellm` are documented here.
 
 ## Unreleased
 
+- Emit Core `ReasoningDelta` events for readable provider reasoning while preserving
+  the final `ReasoningBlock` and keeping assistant text on its own channel. Requires Core 0.5.1.
+
 - Serialize Core `SystemReminder` values as Chat Completions `user` messages.
   Only `SystemInstruction` remains `system`. `INSTRUCTIONS` placement still
   precedes history; `TAIL` / `AUTO` follow it. Emitting reminders as `system`
   let gateways hoist them into the prompt prefix and truncate prefix cache.
+- Treat `cache="auto"` as `prefer`: mark the stable instruction, last tool, and
+  growing transcript. Never attach `cache_control` to reminder messages.
+- Always send `stream=true`. Callers without an event sink still receive the
+  assembled `ModelResponse`; non-streaming completions were timing out on long
+  generations.
 
 ## 0.1.0 - 2026-07-28
 

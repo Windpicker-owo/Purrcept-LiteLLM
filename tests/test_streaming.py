@@ -347,14 +347,29 @@ async def test_synthetic_tool_only_response_without_usage_has_minimal_events() -
     ]
 
 
-async def test_stream_for_non_streaming_request_is_rejected() -> None:
-    backend = LiteLLMBackend(completion=CaptureCompletion(ChunkStream(())))
+async def test_request_without_sink_still_streams_and_assembles_the_response() -> None:
+    """Callers that omit ``emit`` still use streaming to avoid idle timeouts."""
 
-    with pytest.raises(ModelRequestError, match="stream for a non-streaming"):
-        await backend.generate(
-            ModelRequest((Message.user("hello"),)),
-            model="model",
-        )
+    chunks: tuple[dict[str, object], ...] = (
+        {
+            "id": "stream-1",
+            "choices": [{"delta": {"content": "hi"}}],
+        },
+        {
+            "id": "stream-1",
+            "choices": [{"delta": {}, "finish_reason": "stop"}],
+        },
+    )
+    completion = CaptureCompletion(ChunkStream(chunks))
+    response = await LiteLLMBackend(completion=completion).generate(
+        ModelRequest((Message.user("hello"),)),
+        model="model",
+    )
+
+    assert completion.calls[0]["stream"] is True
+    assert completion.calls[0]["stream_options"] == {"include_usage": True}
+    assert response.text == "hi"
+    assert response.response_id == "stream-1"
 
 
 async def test_empty_stream_and_missing_tool_name_are_rejected() -> None:

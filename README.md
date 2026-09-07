@@ -61,9 +61,10 @@ async def main() -> None:
     print(answer)
 ```
 
-`Generate` 默认会请求流式响应；插件会依次产生
+请求默认走流式 Chat Completions，避免长生成在网关空闲超时。`Generate` 会依次产生
 `ModelStreamStarted`、`TextDelta` / `ToolCallDelta`、`UsageUpdate` 和
-`ModelStreamCompleted`。禁用 Effect 的流式事件后，插件会自动使用普通响应。
+`ModelStreamCompleted`。即使调用方不提供 `emit`，Adapter 仍会消费流并返回组装后的
+`ModelResponse`。
 
 完整的自动工具循环见 [`examples/02_tool_loop.py`](examples/02_tool_loop.py)。
 
@@ -178,8 +179,12 @@ Core 的稳定协议。
   管理。只有 `SystemInstruction` 使用 `system`。
 - `INSTRUCTIONS` placement 仍插在对话历史之前，但角色是 `user`。`TAIL` / `AUTO` 跟在
   历史之后。相对顺序保持 Core 编译结果。
-- `cache="prefer"` / `cache="explicit"` 会在稳定 instruction（其次为最后一个 tool）
-  添加 LiteLLM `cache_control` 提示。Provider 是否支持和如何计费由 Provider 决定。
+- `cache="auto"`（Adapter 默认，等同 `prefer`）与 `cache="explicit"` 会在稳定
+  instruction、最后一个 tool、以及不断增长的对话历史上添加 LiteLLM `cache_control`
+  提示。Provider 是否支持和如何计费由 Provider 决定。
+- reminder（含 `INSTRUCTIONS` 前置与 `TAIL` / `AUTO` 尾部）从不打显式缓存标记。它们是
+  请求局部、常常易变的控制文本；标记它们只会制造几乎不会命中的 cache write。
+- `cache="disabled"` 不添加任何 `cache_control`。
 - strict cache 默认拒绝。只有确认目标 Provider 兼容后，才设置
   `allow_strict_prompt_cache=True`。
 - LiteLLM Chat Completions 没有统一、可靠的服务器 continuation 句柄，因此

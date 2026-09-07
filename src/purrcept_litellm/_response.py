@@ -3,8 +3,8 @@
 Visible assistant text, hidden model reasoning, tool calls, usage, metadata,
 and optional continuation state are mapped independently. Reasoning fragments
 are retained in the final assistant message so a later request can replay the
-provider's complete turn, but they deliberately produce no visible text-delta
-events.
+provider's complete turn. Readable reasoning also emits a distinct reasoning
+channel; it never appears in assistant answer text-delta events.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from purrcept_core.models import (
     ModelStreamEvent,
     ModelStreamStarted,
     ReasoningBlock,
+    ReasoningDelta,
     TextBlock,
     TextDelta,
     TokenUsage,
@@ -154,10 +155,10 @@ class StreamAccumulator:
 
         reasoning = _reasoning_text(delta)
         if reasoning is not None:
-            # Reasoning is state required by a future model request, not
-            # user-visible output. It is accumulated silently and appears only
-            # in the completed response's typed ReasoningBlock.
+            # Keep continuation state intact while exposing only the provider's
+            # normalized readable text on a separate observation channel.
             self._reasoning.append(reasoning)
+            events.append(ReasoningDelta(reasoning))
 
         content = read(delta, "content", None)
         if isinstance(content, str) and content:

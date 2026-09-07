@@ -63,7 +63,7 @@ def compile_request(
     *,
     model: str,
     config: LiteLLMConfig,
-    stream: bool,
+    stream: bool = True,
 ) -> dict[str, object]:
     """Build one isolated LiteLLM invocation without mutating the request."""
 
@@ -76,9 +76,11 @@ def compile_request(
     # INSTRUCTIONS reminders still precede conversation so they sit next to
     # the trusted prefix, but they remain user-level and are not hoisted into
     # the provider system blob. TAIL and AUTO follow the transcript.
+    reminder_indexes: set[int] = set()
     for reminder in request.reminders:
         if reminder.placement is ReminderPlacement.INSTRUCTIONS:
             messages.append(_reminder_message(reminder))
+            reminder_indexes.add(len(messages) - 1)
     conversation_start = len(messages)
     for message in request.messages:
         messages.extend(_message_payloads(message))
@@ -86,6 +88,7 @@ def compile_request(
     for reminder in request.reminders:
         if reminder.placement is not ReminderPlacement.INSTRUCTIONS:
             messages.append(_reminder_message(reminder))
+            reminder_indexes.add(len(messages) - 1)
 
     tools = [_tool_payload(tool) for tool in request.tools]
     _apply_prompt_cache(
@@ -93,6 +96,7 @@ def compile_request(
         messages=messages,
         tools=tools,
         conversation_range=(conversation_start, conversation_end),
+        reminder_indexes=reminder_indexes,
         config=config,
     )
 
@@ -326,19 +330,25 @@ def _apply_prompt_cache(
     messages: list[dict[str, object]],
     tools: list[dict[str, object]],
     conversation_range: tuple[int, int],
+    reminder_indexes: set[int],
     config: LiteLLMConfig,
 ) -> None:
     """Place stable, tool, and growing-history cache breakpoints.
 
-    ``PREFER`` and ``EXPLICIT`` are best-effort provider hints. A single System
-    breakpoint caches only the static contract, which is especially wasteful
-    for a long-lived Entity whose tool schema and transcript are also repeated.
-    The three targets below stay within the common four-breakpoint provider
-    limit and never mark the volatile user-level tail reminder.
+    ``AUTO`` is this adapter's default and matches ``PREFER`` / ``EXPLICIT``:
+    best-effort hints on the static contract, the last tool, and the growing
+    transcript. A single System breakpoint caches only the static contract,
+    which is especially wasteful for a long-lived Entity whose tool schema and
+    transcript are also repeated. The three targets below stay within the
+    common four-breakpoint provider limit.
+
+    Reminders are request-local and often volatile (world view, clocks). Marking
+    them would write a cache that almost never hits, so they are never given
+    ``cache_control`` even when they sit next to the trusted prefix.
     """
 
     cache = request.cache
-    if cache.mode in {CacheMode.AUTO, CacheMode.DISABLED}:
+    if cache.mode is CacheMode.DISABLED:
         return
     if cache.strict and not config.allow_strict_prompt_cache:
         raise ModelRequestError(
@@ -361,8 +371,10 @@ def _apply_prompt_cache(
         breakpoints += 1
 
     start, end = conversation_range
-    for message in reversed(messages[start:end]):
-        if _mark_message_cache_control(message):
+    for index in range(end - 1, start - 1, -1):
+        if index in reminder_indexes:
+            continue
+        if _mark_message_cache_control(messages[index]):
             breakpoints += 1
             break
 

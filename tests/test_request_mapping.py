@@ -121,6 +121,7 @@ async def test_complete_request_is_compiled_to_litellm_chat_format() -> None:
             tool_choice=ToolChoice.REQUIRED,
             parallel_tool_calls=True,
         ),
+        cache=PromptCachePolicy(mode=CacheMode.DISABLED),
         continuation=ModelContinuation("ignored-provider", {"cursor": "ignored"}),
         metadata={"not": "sent"},
         provider_options={
@@ -142,7 +143,8 @@ async def test_complete_request_is_compiled_to_litellm_chat_format() -> None:
     assert call["api_base"] == "https://proxy.invalid/v1"
     assert call["api_version"] == "v1"
     assert call["timeout"] == 12
-    assert call["stream"] is False
+    assert call["stream"] is True
+    assert call["stream_options"] == {"include_usage": True}
     assert call["top_p"] == 0.7
     assert call["reasoning_effort"] == "medium"
     assert call["temperature"] == 0.2
@@ -315,7 +317,8 @@ async def test_empty_tool_result_and_multimodal_error_are_supported() -> None:
                     ),
                 ),
             ),
-        )
+        ),
+        cache=PromptCachePolicy(mode=CacheMode.DISABLED),
     )
 
     await backend.generate(request, model="model")
@@ -473,6 +476,42 @@ async def test_preferred_cache_keeps_volatile_tail_after_growing_breakpoint() ->
     assert tools[0]["cache_control"] == {"type": "ephemeral"}
 
 
+async def test_preferred_cache_does_not_mark_instruction_or_tail_reminders() -> None:
+    """Explicit cache breakpoints skip request-local reminders."""
+
+    completion = CaptureCompletion(text_response())
+    request = ModelRequest(
+        (Message.user("hello"),),
+        instructions=(SystemInstruction.from_text("stable contract"),),
+        reminders=(
+            SystemReminder(
+                (TextBlock("prefix reminder"),),
+                key="prefix",
+                placement=ReminderPlacement.INSTRUCTIONS,
+            ),
+            SystemReminder(
+                (TextBlock("tail reminder"),),
+                key="tail",
+                placement=ReminderPlacement.TAIL,
+            ),
+        ),
+        cache=PromptCachePolicy(mode=CacheMode.PREFER),
+    )
+
+    await LiteLLMBackend(completion=completion).generate(request, model="model")
+
+    messages = cast(list[dict[str, object]], completion.calls[0]["messages"])
+    assert [message["role"] for message in messages] == ["system", "user", "user", "user"]
+    assert messages[0]["content"] == "stable contract"
+    assert messages[0]["cache_control"] == {"type": "ephemeral"}
+    assert messages[1]["content"] == "prefix reminder"
+    assert "cache_control" not in messages[1]
+    assert messages[2]["content"] == "hello"
+    assert messages[2]["cache_control"] == {"type": "ephemeral"}
+    assert messages[3]["content"] == "tail reminder"
+    assert "cache_control" not in messages[3]
+
+
 async def test_instruction_and_tail_reminders_are_user_messages() -> None:
     """Reminders stay user-level; only SystemInstruction uses system."""
 
@@ -504,17 +543,44 @@ async def test_instruction_and_tail_reminders_are_user_messages() -> None:
     assert messages[3]["content"] == "tail reminder"
 
 
-@pytest.mark.parametrize("mode", [CacheMode.AUTO, CacheMode.DISABLED])
-async def test_auto_and_disabled_cache_do_not_modify_messages(mode: CacheMode) -> None:
+async def test_auto_cache_matches_prefer_breakpoints() -> None:
+    """AUTO is this adapter's default and uses the same explicit breakpoints as PREFER."""
+
     completion = CaptureCompletion(text_response())
-    backend = LiteLLMBackend(completion=completion)
     request = ModelRequest(
         (Message.user("hello"),),
         instructions=(SystemInstruction.from_text("stable"),),
-        cache=PromptCachePolicy(mode=mode),
+        reminders=(
+            SystemReminder(
+                (TextBlock("volatile tail"),),
+                placement=ReminderPlacement.TAIL,
+            ),
+        ),
+        cache=PromptCachePolicy(mode=CacheMode.AUTO),
     )
 
-    await backend.generate(request, model="model")
+    await LiteLLMBackend(completion=completion).generate(request, model="model")
 
     messages = cast(list[dict[str, object]], completion.calls[0]["messages"])
     assert messages[0]["content"] == "stable"
+    assert messages[0]["cache_control"] == {"type": "ephemeral"}
+    assert messages[1]["content"] == "hello"
+    assert messages[1]["cache_control"] == {"type": "ephemeral"}
+    assert messages[2]["content"] == "volatile tail"
+    assert "cache_control" not in messages[2]
+
+
+async def test_disabled_cache_does_not_modify_messages() -> None:
+    completion = CaptureCompletion(text_response())
+    request = ModelRequest(
+        (Message.user("hello"),),
+        instructions=(SystemInstruction.from_text("stable"),),
+        cache=PromptCachePolicy(mode=CacheMode.DISABLED),
+    )
+
+    await LiteLLMBackend(completion=completion).generate(request, model="model")
+
+    messages = cast(list[dict[str, object]], completion.calls[0]["messages"])
+    assert messages[0]["content"] == "stable"
+    assert "cache_control" not in messages[0]
+    assert "cache_control" not in messages[1]

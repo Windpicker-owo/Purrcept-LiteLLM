@@ -1292,7 +1292,7 @@ wheels = [
 
 [[package]]
 name = "purrcept-core"
-version = "0.5.0"
+version = "0.5.1"
 source = { editable = "../purrcept_core" }
 dependencies = [
     { name = "pydantic" },
@@ -1314,7 +1314,7 @@ dev = [
 
 [[package]]
 name = "purrcept-litellm"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "litellm" },

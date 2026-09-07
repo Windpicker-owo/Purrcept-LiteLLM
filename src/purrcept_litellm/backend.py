@@ -26,9 +26,9 @@ from purrcept_core.models import (
     JsonValue,
     ModelEventSink,
     ModelRequest,
-    ModelRequestError,
     ModelResponse,
     ModelStreamCompleted,
+    ModelStreamEvent,
 )
 
 from ._request import compile_request
@@ -109,11 +109,14 @@ class LiteLLMBackend:
     ) -> ModelResponse:
         """Compile, execute, and convert one model request."""
 
+        # Always stream. Non-streaming Chat Completions often idle-timeout on
+        # long generations; a caller without ``emit`` still receives the
+        # assembled ``ModelResponse`` after the iterator is exhausted.
         payload = compile_request(
             request,
             model=model,
             config=self._config,
-            stream=emit is not None,
+            stream=True,
         )
         callback_completion = (
             _RequestCallbackCompletion(self._callbacks)
@@ -150,17 +153,10 @@ class LiteLLMBackend:
                 _raise_mapped(error, model=model)
 
             if isinstance(raw, AsyncIterable):
-                if emit is None:
-                    abandon_callbacks()
-                    await _close_stream_after_local_exit(cast(object, raw))
-                    raise ModelRequestError(
-                        "LiteLLM returned a stream for a non-streaming request.",
-                        provider="litellm",
-                        model=model,
-                    )
+                sink = emit if emit is not None else _discard_stream_event
                 return await _consume_stream(
                     cast(AsyncIterable[object], raw),
-                    emit=emit,
+                    emit=sink,
                     model=model,
                     abandon_callbacks=abandon_callbacks,
                 )
@@ -322,6 +318,12 @@ def _consume_callback_task_result(task: asyncio.Task[None]) -> None:
 
 def _ignore_callback_completion() -> None:
     """Provide a uniform abandonment hook when no callback barrier exists."""
+
+
+def _discard_stream_event(event: ModelStreamEvent) -> None:
+    """Drop stream events when the caller only wants the assembled response."""
+
+    del event
 
 
 async def _default_completion(**kwargs: object) -> object:
